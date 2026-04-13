@@ -1,7 +1,6 @@
 requests
+moviepy
 pytrends
-pexels-api
 tweepy
 facebook-sdk
-moviepy
 Pillow
