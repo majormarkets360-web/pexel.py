@@ -1,0 +1,7 @@
+requests
+pytrends
+pexels-api
+tweepy
+facebook-sdk
+moviepy
+Pillow
