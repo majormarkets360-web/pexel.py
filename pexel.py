@@ -4,7 +4,7 @@ import json
 import time
 import random
 from datetime import datetime
-from moviepy.editor import *
+from moviepy import *
 from pytrends.request import TrendReq
 from pexels_api import API as PexelsAPI
 import tweepy
