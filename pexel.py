@@ -4,10 +4,8 @@ import json
 import time
 import random
 from datetime import datetime
-from moviepy import VideoFileClip, concatenate_videoclips
+from moviepy.editor import VideoFileClip, concatenate_videoclips, CompositeVideoClip, TextClip, AudioFileClip, CompositeAudioClip
 from pytrends.request import TrendReq
-import tweepy
-import facebook
 import os
 from PIL import Image
 from io import BytesIO
@@ -29,20 +27,9 @@ pexels_api_key = st.sidebar.text_input(
     help="Get your free API key from https://www.pexels.com/api/"
 )
 
-# Social Media APIs
-twitter_bearer_token = st.sidebar.text_input("Twitter Bearer Token (for posting)", type="password")
-facebook_access_token = st.sidebar.text_input("Facebook Access Token", type="password")
-
-# Hugging Face API (for text generation)
-hf_api_key = st.sidebar.text_input(
-    "Hugging Face API Key", 
-    type="password",
-    help="Get free API key from https://huggingface.co/settings/tokens"
-)
-
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 📹 Video Settings")
-video_duration = st.sidebar.slider("Video Duration (seconds)", 30, 90, 60)
+video_duration = st.sidebar.slider("Video Duration (seconds)", 15, 60, 30)
 video_quality = st.sidebar.selectbox("Video Quality", ["720p", "1080p"], index=0)
 
 # ---------- Helper Functions ----------
@@ -51,54 +38,41 @@ def get_trending_topics():
     """Fetch trending topics from Google Trends, Hacker News, and Reddit."""
     topics = []
     
-    progress_bar = st.progress(0)
-    status_text = st.empty()
-    
-    # Google Trends via pytrends
+    # Google Trends
     try:
-        status_text.text("Fetching Google Trends...")
         pytrends = TrendReq(hl='en-US', tz=360)
         trending_searches = pytrends.trending_searches(pn='united_states')
-        google_topics = trending_searches[0].tolist()[:5]
+        google_topics = trending_searches[0].tolist()[:3]
         topics.extend(google_topics)
-        progress_bar.progress(33)
     except Exception as e:
-        st.warning(f"Google Trends fetch failed: {e}")
+        st.warning(f"Google Trends: {e}")
     
     # Hacker News
     try:
-        status_text.text("Fetching Hacker News...")
         hn_url = "https://hacker-news.firebaseio.com/v0/topstories.json"
-        top_stories = requests.get(hn_url).json()[:5]
+        top_stories = requests.get(hn_url).json()[:3]
         for story_id in top_stories:
             story_url = f"https://hacker-news.firebaseio.com/v0/item/{story_id}.json"
             story = requests.get(story_url).json()
             if story and 'title' in story:
                 topics.append(story['title'])
-        progress_bar.progress(66)
     except Exception as e:
-        st.warning(f"Hacker News fetch failed: {e}")
+        st.warning(f"Hacker News: {e}")
     
     # Reddit
     try:
-        status_text.text("Fetching Reddit trends...")
-        reddit_url = "https://www.reddit.com/r/all/top.json?limit=5"
+        reddit_url = "https://www.reddit.com/r/all/top.json?limit=3"
         reddit_data = requests.get(reddit_url, headers={'User-agent': 'StreamlitApp'}).json()
         for post in reddit_data['data']['children']:
             topics.append(post['data']['title'])
-        progress_bar.progress(100)
     except Exception as e:
-        st.warning(f"Reddit fetch failed: {e}")
+        st.warning(f"Reddit: {e}")
     
-    status_text.empty()
-    progress_bar.empty()
-    
-    return list(set(topics))[:10]  # Return unique topics, max 10
+    return list(set(topics))[:5]
 
-def search_pexels_videos(keyword, api_key, per_page=5):
+def search_pexels_videos(keyword, api_key, per_page=3):
     """Search Pexels for royalty-free video clips."""
     if not api_key:
-        st.warning("⚠️ Please enter your Pexels API key in the sidebar.")
         return []
     
     api_key = api_key.strip()
@@ -106,7 +80,7 @@ def search_pexels_videos(keyword, api_key, per_page=5):
     url = f'https://api.pexels.com/videos/search?query={keyword}&per_page={per_page}&orientation=landscape'
     
     try:
-        with st.spinner(f"Searching Pexels for videos about '{keyword}'..."):
+        with st.spinner(f"Searching for videos..."):
             response = requests.get(url, headers=headers, timeout=30)
             
             if response.status_code == 200:
@@ -129,51 +103,35 @@ def search_pexels_videos(keyword, api_key, per_page=5):
                             video_urls.append(best_video['link'])
                 
                 if video_urls:
-                    st.success(f"✅ Found {len(video_urls)} videos for '{keyword}'")
+                    st.success(f"✅ Found {len(video_urls)} videos")
                 else:
-                    st.warning(f"No videos found for '{keyword}'. Try a different topic.")
+                    st.warning(f"No videos found")
                 
                 return video_urls
-            elif response.status_code == 401:
-                st.error("❌ Invalid Pexels API key. Please check your key.")
-                return []
             else:
-                st.error(f"❌ Pexels API error {response.status_code}")
+                st.error(f"Pexels API error: {response.status_code}")
                 return []
                 
     except Exception as e:
         st.error(f"Error: {e}")
         return []
 
-def generate_text(topic, hf_key):
-    """Generate short engaging text/narration."""
-    # Simple template text (avoids API issues)
-    templates = [
-        f"Discover the latest trends in {topic}! In this video, we explore everything you need to know about {topic}. From breaking news to expert insights, we've got you covered. Don't miss out on this exciting topic!",
-        f"Get ready to dive into {topic}! This trending topic is taking the world by storm. Watch now to learn all the exciting details and stay informed!",
-        f"Explore the fascinating world of {topic}! From amazing facts to important updates, this video has everything you need. Don't forget to like and subscribe!"
-    ]
-    return random.choice(templates)
-
 def download_video(url, filename):
     """Download video from URL."""
     try:
         response = requests.get(url, stream=True, timeout=30)
         if response.status_code == 200:
-            total_size = int(response.headers.get('content-length', 0))
-            downloaded = 0
             with open(filename, 'wb') as f:
                 for chunk in response.iter_content(chunk_size=8192):
                     f.write(chunk)
-                    downloaded += len(chunk)
             return True
     except Exception as e:
-        st.error(f"Failed to download video: {e}")
+        st.error(f"Download failed: {e}")
         return False
     return False
 
-def create_video(topic, video_urls, text):
-    """Create video by concatenating clips using MoviePy only."""
+def create_simple_video(topic, video_urls):
+    """Create video by simply concatenating clips without any complex operations."""
     
     temp_files = []
     output_path = f"output_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
@@ -184,20 +142,20 @@ def create_video(topic, video_urls, text):
     try:
         # Download all video clips
         downloaded_paths = []
-        for i, url in enumerate(video_urls[:3]):  # Max 3 clips
-            status_text.text(f"Downloading clip {i+1}/{min(3, len(video_urls))}...")
-            filename = f"temp_clip_{i}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
+        for i, url in enumerate(video_urls):
+            status_text.text(f"Downloading clip {i+1}/{len(video_urls)}...")
+            filename = f"clip_{i}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
             temp_files.append(filename)
             
             if download_video(url, filename):
                 downloaded_paths.append(filename)
-                progress_bar.progress((i + 1) * 25)
+                progress_bar.progress((i + 1) * 30)
         
         if not downloaded_paths:
-            st.error("No videos could be downloaded")
+            st.error("No videos downloaded")
             return None
         
-        # Load and trim video clips
+        # Load video clips
         status_text.text("Loading video clips...")
         progress_bar.progress(50)
         
@@ -205,9 +163,9 @@ def create_video(topic, video_urls, text):
         for path in downloaded_paths:
             try:
                 clip = VideoFileClip(path)
-                # Take first 15-20 seconds of each clip
-                clip_duration = min(20, clip.duration)
-                clip = clip.subclipped(0, clip_duration)
+                # Take only first 10 seconds of each clip to keep video short
+                clip_duration = min(10, clip.duration)
+                clip = clip.subclip(0, clip_duration)
                 clips.append(clip)
             except Exception as e:
                 st.warning(f"Could not load clip: {e}")
@@ -216,34 +174,44 @@ def create_video(topic, video_urls, text):
             st.error("No clips could be loaded")
             return None
         
-        # Concatenate clips
-        status_text.text("Concatenating video clips...")
+        # Simple concatenation
+        status_text.text("Concatenating clips...")
         progress_bar.progress(70)
         
         try:
-            final_clip = concatenate_videoclips(clips, method="compose")
-        except Exception as e:
-            st.error(f"Failed to concatenate: {e}")
-            # Try alternative method
-            final_clip = concatenate_videoclips(clips, method="chain")
+            # Use the simplest concatenation method
+            final_clip = concatenate_videoclips(clips)
+        except:
+            # If that fails, just use the first clip
+            final_clip = clips[0]
         
-        # Trim to desired duration
+        # Make sure video is not too long
         if final_clip.duration > video_duration:
-            final_clip = final_clip.subclipped(0, video_duration)
+            final_clip = final_clip.subclip(0, video_duration)
         
-        # Render final video
+        # Write video file - using the simplest parameters
         status_text.text("Rendering final video...")
         progress_bar.progress(85)
         
-        final_clip.write_videofile(
-            output_path,
-            fps=24,
-            codec='libx264',
-            audio_codec='aac',
-            temp_audiofile='temp-audio.m4a',
-            remove_temp=True,
-            logger=None
-        )
+        # Try to write video with minimal parameters
+        try:
+            final_clip.write_videofile(
+                output_path,
+                fps=24,
+                codec='libx264',
+                audio_codec='aac'
+            )
+        except Exception as e:
+            st.error(f"Render error: {e}")
+            # Try even simpler render
+            try:
+                final_clip.write_videofile(
+                    output_path,
+                    fps=24
+                )
+            except:
+                # Last resort: just save the first clip
+                clips[0].write_videofile(output_path, fps=24)
         
         # Clean up
         final_clip.close()
@@ -251,9 +219,9 @@ def create_video(topic, video_urls, text):
             clip.close()
         
         progress_bar.progress(100)
-        status_text.text("Video created successfully!")
+        status_text.text("Video created!")
         
-        # Clean up temp files
+        # Clean temp files
         for f in temp_files:
             if os.path.exists(f):
                 try:
@@ -261,7 +229,10 @@ def create_video(topic, video_urls, text):
                 except:
                     pass
         
-        return output_path
+        if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+            return output_path
+        else:
+            return None
         
     except Exception as e:
         st.error(f"Video creation error: {str(e)}")
@@ -270,98 +241,72 @@ def create_video(topic, video_urls, text):
         status_text.empty()
         progress_bar.empty()
 
-def post_to_twitter(video_path, caption, bearer_token):
-    """Post video to X (Twitter)."""
-    if not bearer_token:
-        return None
-    
-    try:
-        client = tweepy.Client(bearer_token=bearer_token)
-        # Twitter API v2 media upload requires additional setup
-        # For now, just return success message
-        st.info("Twitter posting requires additional API setup. Video saved locally.")
-        return None
-    except Exception as e:
-        st.error(f"Twitter post failed: {e}")
-        return None
-
-def post_to_facebook(video_path, caption, access_token):
-    """Post video to Facebook."""
-    if not access_token:
-        return None
-    
-    try:
-        st.info("Facebook posting requires additional API setup. Video saved locally.")
-        return None
-    except Exception as e:
-        st.error(f"Facebook post failed: {e}")
-        return None
-
 # ---------- Main App UI ----------
-col1, col2, col3 = st.columns([1, 2, 1])
-with col2:
-    st.markdown("### 🎯 Topic Selection")
-    
-    topic_selection = st.radio(
-        "Choose topic source:", 
-        ("🔥 Trending Topics", "✏️ Enter Custom Topic"),
-        horizontal=True
-    )
-    
-    if topic_selection == "🔥 Trending Topics":
-        if st.button("🔄 Fetch Latest Trends", use_container_width=True):
-            with st.spinner("Fetching trending topics..."):
-                topics = get_trending_topics()
-                if topics:
-                    st.session_state['topics'] = topics
-                    st.success(f"Found {len(topics)} trending topics!")
-                else:
-                    st.error("Could not fetch topics. Please enter a custom topic.")
+st.markdown("### 🎯 Create Your Video")
+
+# Simple topic input
+selected_topic = st.text_input(
+    "Enter a topic for your video",
+    placeholder="e.g., Nature, Technology, Space, Animals, Sports...",
+    help="Enter any topic you want to create a video about"
+)
+
+# Or use trending topics
+st.markdown("---")
+st.markdown("#### Or choose a trending topic:")
+
+if st.button("🔥 Get Trending Topics", use_container_width=True):
+    with st.spinner("Fetching trending topics..."):
+        topics = get_trending_topics()
+        if topics:
+            st.session_state['trending_topics'] = topics
+
+if 'trending_topics' in st.session_state:
+    cols = st.columns(3)
+    for i, topic in enumerate(st.session_state['trending_topics'][:3]):
+        with cols[i]:
+            if st.button(f"📌 {topic[:30]}", key=f"trend_{i}", use_container_width=True):
+                selected_topic = topic
+                st.session_state['selected_topic'] = topic
+                st.rerun()
+
+if 'selected_topic' in st.session_state:
+    selected_topic = st.session_state['selected_topic']
+    st.info(f"Selected topic: **{selected_topic}**")
+
+st.markdown("---")
+
+# Show API status
+if pexels_api_key:
+    st.success("✅ Pexels API key configured")
+else:
+    st.warning("⚠️ Please enter your Pexels API key in the sidebar")
+
+st.markdown("---")
+
+# Generate Video Button
+if st.button("🎬 Generate Video", type="primary", use_container_width=True):
+    if not selected_topic:
+        st.error("❌ Please enter or select a topic first.")
+    elif not pexels_api_key:
+        st.error("❌ Please enter your Pexels API key in the sidebar.")
+    else:
+        st.info(f"Creating video about: **{selected_topic}**")
         
-        if 'topics' in st.session_state and st.session_state['topics']:
-            selected_topic = st.selectbox("Select a trending topic", st.session_state['topics'])
-        else:
-            selected_topic = None
-            st.info("Click the button above to fetch trending topics.")
-    else:
-        selected_topic = st.text_input("Enter a custom topic", placeholder="e.g., Artificial Intelligence, Climate Change, Space Exploration...")
-    
-    st.markdown("---")
-    
-    # Show API key status
-    if pexels_api_key:
-        st.success("✅ Pexels API key provided")
-    else:
-        st.warning("⚠️ Please enter your Pexels API key in the sidebar")
-    
-    # Generate Video Button
-    if st.button("🎬 Generate Video", type="primary", use_container_width=True):
-        if not selected_topic:
-            st.error("❌ Please select or enter a topic first.")
-        elif not pexels_api_key:
-            st.error("❌ Please enter your Pexels API key in the sidebar.")
-        else:
-            # Step 1: Search for videos
-            st.info("📹 Step 1/3: Searching for videos...")
-            video_urls = search_pexels_videos(selected_topic, pexels_api_key)
-            if not video_urls:
-                st.stop()
+        # Search for videos
+        video_urls = search_pexels_videos(selected_topic, pexels_api_key)
+        
+        if video_urls:
+            st.success(f"Found {len(video_urls)} videos! Creating your video...")
             
-            # Step 2: Generate narration text
-            st.info("📝 Step 2/3: Generating narration...")
-            script = generate_text(selected_topic, hf_api_key)
-            with st.expander("📝 View Script"):
-                st.write(script)
-            
-            # Step 3: Create video
-            st.info("🎬 Step 3/3: Creating video (this may take 2-3 minutes)...")
-            video_file = create_video(selected_topic, video_urls, script)
+            # Create video
+            video_file = create_simple_video(selected_topic, video_urls)
             
             if video_file and os.path.exists(video_file):
                 st.success("✅ Video created successfully!")
                 
                 # Display video
-                st.markdown("### 🎥 Your Generated Video")
+                st.markdown("### 🎥 Your Video")
                 with open(video_file, 'rb') as f:
                     video_bytes = f.read()
                 st.video(video_bytes)
@@ -376,14 +321,16 @@ with col2:
                         use_container_width=True
                     )
             else:
-                st.error("❌ Failed to create video. Please try again with a different topic.")
+                st.error("❌ Failed to create video. Please try a different topic.")
+        else:
+            st.error("No videos found for this topic. Please try a different topic.")
 
 # ---------- Footer ----------
 st.markdown("---")
 st.markdown(
     """
     <div style='text-align: center; color: gray;'>
-    Made with ❤️ using Streamlit | Powered by Pexels API and MoviePy
+    Made with ❤️ using Streamlit | Powered by Pexels API
     </div>
     """,
     unsafe_allow_html=True
