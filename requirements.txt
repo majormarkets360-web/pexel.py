@@ -1,5 +1,8 @@
-streamlit
 requests
-moviepy==1.0.3
+moviepy
 pytrends
+tweepy
 Pillow
+numpy
+imageio
+imageio-ffmpeg
