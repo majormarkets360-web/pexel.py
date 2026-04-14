@@ -1,5 +1,4 @@
 requests
-moviepy
 pytrends
 tweepy
 facebook-sdk
