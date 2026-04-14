@@ -1,10 +1,9 @@
-
-    from src.trend_finder      import get_trending_topics
-    from src.script_generator  import generate_script
-    from src.video_builder     import build_video
-    from src.scheduler         import AutoPostScheduler
-    from src.social_media      import post_to_platforms
-    return get_trending_topics, generate_script, build_video, AutoPostScheduler, post_to_platforms
+from src.trend_finder      import get_trending_topics
+from src.script_generator  import generate_script
+from src.video_builder     import build_video
+from src.scheduler         import AutoPostScheduler
+from src.social_media      import post_to_platforms
+return get_trending_topics, generate_script, build_video, AutoPostScheduler, post_to_platforms
 
 # â”€â”€ Sidebar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 with st.sidebar:
