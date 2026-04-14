@@ -1,10 +1,4 @@
-in DEFAULTS.items():
-    if k not in st.session_state:
-        st.session_state[k] = v
 
-# â”€â”€ Lazy imports (show spinner on first load) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-@st.cache_resource(show_spinner=False)
-def load_modules():
     from src.trend_finder      import get_trending_topics
     from src.script_generator  import generate_script
     from src.video_builder     import build_video
