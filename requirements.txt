@@ -1,10 +1,5 @@
+streamlit
 requests
-moviepy
+moviepy==1.0.3
 pytrends
 Pillow
-numpy
-decorator
-imageio
-imageio-ffmpeg
-tqdm
-proglog
