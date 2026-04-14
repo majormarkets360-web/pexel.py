@@ -1,5 +1,10 @@
-requests
-pytrends
-tweepy
-facebook-sdk
-Pillow
+requests==2.31.0
+moviepy==1.0.3
+pytrends==4.9.0
+Pillow==10.0.0
+numpy==1.24.3
+decorator==4.4.2
+imageio==2.31.1
+imageio-ffmpeg==0.4.8
+tqdm==4.65.0
+proglog==0.1.10
