@@ -1,8 +1,41 @@
-requests
-moviepy
-pytrends
-tweepy
-Pillow
-numpy
-imageio
-imageio-ffmpeg
+# ── Core ──────────────────────────────────────────────────────────────────────
+python-dotenv>=1.0.0
+requests>=2.31.0
+pandas>=2.0.0
+
+# ── AI Script Generation ──────────────────────────────────────────────────────
+anthropic>=0.30.0
+
+# ── Trending Topics ───────────────────────────────────────────────────────────
+pytrends>=4.9.0
+
+# ── Text-to-Speech ───────────────────────────────────────────────────────────
+gtts>=2.5.0               # free fallback TTS
+# elevenlabs>=1.0.0       # optional: higher quality (uncomment if using)
+
+# ── Video Assembly ────────────────────────────────────────────────────────────
+moviepy>=1.0.3
+Pillow>=10.0.0
+imageio>=2.34.0
+imageio-ffmpeg>=0.4.9
+
+# ── Social Media ──────────────────────────────────────────────────────────────
+# YouTube
+google-api-python-client>=2.100.0
+google-auth-oauthlib>=1.1.0
+google-auth-httplib2>=0.1.1
+
+# Instagram
+instagrapi>=2.0.0
+
+# TikTok
+tiktok-uploader>=0.0.14
+
+# Twitter / X
+tweepy>=4.14.0
+
+# ── Optional: 2FA for Instagram ───────────────────────────────────────────────
+# pyotp>=2.9.0
+
+# ── Dev / Utilities ───────────────────────────────────────────────────────────
+APScheduler>=3.10.0
