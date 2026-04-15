@@ -4,18 +4,16 @@ import json
 import time
 import random
 import os
-import subprocess
 from datetime import datetime
-from moviepy.editor import VideoFileClip, concatenate_videoclips, CompositeVideoClip
-from pytrends.request import TrendReq
-import tweepy
 from PIL import Image, ImageDraw, ImageFont
 import numpy as np
+import base64
+from io import BytesIO
 
 # ---------- Page Configuration ----------
 st.set_page_config(page_title="AI Video Creator Pro", page_icon="🎬", layout="wide")
 st.title("🎬 AI Video Creator Pro")
-st.markdown("Generate 60-second viral videos with AI narration and auto-post to social media")
+st.markdown("Generate 60-second viral videos with AI narration")
 
 # ---------- Session State ----------
 if 'video_ready' not in st.session_state:
@@ -38,19 +36,11 @@ openai_api_key = st.sidebar.text_input(
     help="Better script generation"
 )
 
-st.sidebar.markdown("### 📱 Twitter Auto-Posting")
-twitter_bearer_token = st.sidebar.text_input("Twitter Bearer Token", type="password")
-twitter_api_key = st.sidebar.text_input("Twitter API Key", type="password")
-twitter_api_secret = st.sidebar.text_input("Twitter API Secret", type="password")
-twitter_access_token = st.sidebar.text_input("Twitter Access Token", type="password")
-twitter_access_secret = st.sidebar.text_input("Twitter Access Secret", type="password")
-
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 🎬 Video Settings")
 video_duration = st.sidebar.slider("Target Duration (seconds)", 30, 90, 60)
 video_quality = st.sidebar.selectbox("Quality", ["720p", "1080p"], index=0)
 include_text_overlay = st.sidebar.checkbox("Add Text Overlay", value=True)
-auto_post = st.sidebar.checkbox("Auto-Post to Twitter", value=False)
 
 # ---------- Core Functions ----------
 def generate_ai_script(topic, api_key=None):
@@ -165,254 +155,149 @@ def search_pexels_videos(keyword, api_key, per_page=5):
     
     return []
 
-def download_video(url, filename):
-    """Download video file"""
-    try:
-        response = requests.get(url, stream=True, timeout=60)
-        if response.status_code == 200:
-            with open(filename, 'wb') as f:
-                for chunk in response.iter_content(chunk_size=32768):
-                    f.write(chunk)
-            return True
-    except:
-        pass
-    return False
+def create_html5_video_preview(video_urls, script, topic):
+    """Create an HTML5 video preview using video URLs"""
+    
+    if not video_urls:
+        return None
+    
+    # Create HTML with embedded videos
+    video_html = f"""
+    <div style="background: black; border-radius: 10px; padding: 20px;">
+        <h3 style="color: white; text-align: center;">🎬 {topic.upper()}</h3>
+    """
+    
+    for i, url in enumerate(video_urls[:3]):
+        video_html += f"""
+        <video width="100%" controls style="margin-bottom: 10px; border-radius: 5px;">
+            <source src="{url}" type="video/mp4">
+            Your browser does not support the video tag.
+        </video>
+        """
+    
+    if script:
+        video_html += f"""
+        <div style="background: rgba(0,0,0,0.8); padding: 15px; border-radius: 5px; margin-top: 10px;">
+            <p style="color: white; font-size: 16px; line-height: 1.5;">{script}</p>
+        </div>
+        """
+    
+    video_html += "</div>"
+    
+    return video_html
 
-def create_text_overlay_frame(text, size=(1920, 1080), duration=3):
-    """Create a text overlay frame using PIL (no ImageMagick needed)"""
+def create_text_overlay_image(text, width=1920, height=1080):
+    """Create a text overlay image as base64"""
     try:
-        # Create image with transparent background
-        img = Image.new('RGBA', size, (0, 0, 0, 0))
+        # Create image
+        img = Image.new('RGBA', (width, height), (0, 0, 0, 128))
         draw = ImageDraw.Draw(img)
         
         # Try to use a default font
         try:
-            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 60)
+            # For Streamlit Cloud - use default PIL font
+            font = ImageFont.load_default()
+            font_size = 20
         except:
+            font = ImageFont.load_default()
+            font_size = 20
+        
+        # Wrap text
+        words = text.split()
+        lines = []
+        current_line = []
+        for word in words:
+            current_line.append(word)
+            if len(' '.join(current_line)) > 40:
+                lines.append(' '.join(current_line[:-1]))
+                current_line = [word]
+        if current_line:
+            lines.append(' '.join(current_line))
+        
+        # Calculate position
+        y_offset = height // 2 - (len(lines) * 30) // 2
+        
+        # Draw each line
+        for line in lines:
             try:
-                font = ImageFont.truetype("Arial.ttf", 60)
+                bbox = draw.textbbox((0, 0), line, font=font)
+                text_width = bbox[2] - bbox[0]
+                x = (width - text_width) // 2
+                draw.text((x, y_offset), line, fill='white', font=font)
+                y_offset += 40
             except:
-                font = ImageFont.load_default()
+                draw.text((width//2 - 100, y_offset), line, fill='white')
+                y_offset += 40
         
-        # Calculate text position (centered, near bottom)
-        bbox = draw.textbbox((0, 0), text, font=font)
-        text_width = bbox[2] - bbox[0]
-        text_height = bbox[3] - bbox[1]
+        # Convert to base64
+        buffered = BytesIO()
+        img.save(buffered, format="PNG")
+        img_base64 = base64.b64encode(buffered.getvalue()).decode()
         
-        x = (size[0] - text_width) // 2
-        y = size[1] - text_height - 100
-        
-        # Draw text with black stroke
-        for offset in [-2, -1, 0, 1, 2]:
-            draw.text((x + offset, y + offset), text, fill='black', font=font)
-        draw.text((x, y), text, fill='white', font=font)
-        
-        # Convert PIL to numpy array
-        frame = np.array(img)
-        
-        # Convert to clip (will be implemented in main function)
-        return frame
+        return f"data:image/png;base64,{img_base64}"
     except Exception as e:
-        print(f"Text overlay error: {e}")
+        st.warning(f"Could not create text overlay: {e}")
         return None
-
-def create_professional_video(topic, video_urls, script, output_path):
-    """Create video with concatenated clips"""
-    
-    temp_files = []
-    progress_bar = st.progress(0)
-    status_text = st.empty()
-    
-    try:
-        num_clips = len(video_urls)
-        clip_duration = video_duration / num_clips if num_clips > 0 else video_duration
-        
-        # Download and prepare clips
-        clips = []
-        for i, url in enumerate(video_urls):
-            status_text.text(f"Downloading clip {i+1}/{num_clips}...")
-            filename = f"temp_clip_{i}.mp4"
-            temp_files.append(filename)
-            
-            if download_video(url, filename):
-                progress_bar.progress(20 + (i * 15))
-                try:
-                    clip = VideoFileClip(filename)
-                    duration = min(clip_duration, clip.duration)
-                    clip = clip.subclip(0, duration)
-                    clips.append(clip)
-                except Exception as e:
-                    st.warning(f"Could not load clip {i+1}: {e}")
-        
-        if not clips:
-            return None
-        
-        status_text.text("Combining clips...")
-        progress_bar.progress(70)
-        
-        # Concatenate all clips
-        if len(clips) == 1:
-            final_video = clips[0]
-        else:
-            final_video = concatenate_videoclips(clips, method="compose")
-        
-        # Trim to exact duration
-        if final_video.duration > video_duration:
-            final_video = final_video.subclip(0, video_duration)
-        
-        # Add text overlay using simpler method
-        if include_text_overlay and script:
-            status_text.text("Adding text overlay...")
-            progress_bar.progress(85)
-            
-            # Split script into chunks
-            words = script.split()
-            chunk_size = max(8, len(words) // 6)
-            chunks = [' '.join(words[i:i+chunk_size]) for i in range(0, len(words), chunk_size)]
-            chunks = chunks[:6]  # Max 6 overlays
-            
-            if chunks:
-                from moviepy.editor import ImageClip
-                
-                # Get video dimensions
-                video_width = final_video.w
-                video_height = final_video.h
-                
-                text_clips = []
-                chunk_duration = video_duration / len(chunks)
-                
-                for i, chunk in enumerate(chunks):
-                    # Create text image
-                    img = Image.new('RGBA', (video_width, video_height), (0, 0, 0, 0))
-                    draw = ImageDraw.Draw(img)
-                    
-                    # Use default font
-                    try:
-                        font_size = max(40, int(video_height * 0.05))
-                        font = ImageFont.load_default()
-                    except:
-                        font = ImageFont.load_default()
-                    
-                    # Split long text into lines
-                    words_in_chunk = chunk.split()
-                    lines = []
-                    current_line = []
-                    for word in words_in_chunk:
-                        current_line.append(word)
-                        if len(' '.join(current_line)) > 30:
-                            lines.append(' '.join(current_line[:-1]))
-                            current_line = [word]
-                    if current_line:
-                        lines.append(' '.join(current_line))
-                    
-                    # Draw each line
-                    y_offset = video_height - 150 - (len(lines) * 40)
-                    for line in lines:
-                        bbox = draw.textbbox((0, 0), line, font=font)
-                        text_width = bbox[2] - bbox[0]
-                        x = (video_width - text_width) // 2
-                        draw.text((x, y_offset), line, fill='white', font=font)
-                        y_offset += 50
-                    
-                    # Convert to clip
-                    text_array = np.array(img)
-                    text_clip = ImageClip(text_array, duration=chunk_duration)
-                    text_clip = text_clip.set_position(('center', 'bottom'))
-                    text_clip = text_clip.set_start(i * chunk_duration)
-                    text_clips.append(text_clip)
-                
-                if text_clips:
-                    final_video = CompositeVideoClip([final_video] + text_clips)
-        
-        # Render final video
-        status_text.text("Rendering final video...")
-        progress_bar.progress(90)
-        
-        final_video.write_videofile(
-            output_path,
-            fps=24,
-            codec='libx264',
-            audio_codec='aac',
-            threads=4,
-            preset='medium',
-            logger=None,
-            verbose=False
-        )
-        
-        # Cleanup
-        final_video.close()
-        for clip in clips:
-            clip.close()
-        
-        progress_bar.progress(100)
-        status_text.text("Video ready!")
-        
-        return output_path if os.path.exists(output_path) else None
-        
-    except Exception as e:
-        st.error(f"Video creation error: {e}")
-        return None
-    finally:
-        for f in temp_files:
-            if os.path.exists(f):
-                try:
-                    os.remove(f)
-                except:
-                    pass
-        status_text.empty()
-        progress_bar.empty()
-
-def post_to_twitter(video_path, caption, bearer_token=None, api_key=None, api_secret=None, access_token=None, access_secret=None):
-    """Post video to Twitter"""
-    
-    caption = caption[:280]
-    
-    # Try OAuth 1.0a first
-    if all([api_key, api_secret, access_token, access_secret]):
-        try:
-            auth = tweepy.OAuth1UserHandler(api_key, api_secret, access_token, access_secret)
-            api = tweepy.API(auth)
-            media = api.media_upload(video_path)
-            api.update_status(status=caption, media_ids=[media.media_id])
-            return True, "Posted with OAuth 1.0a"
-        except Exception as e:
-            error_msg = str(e)
-    
-    # Try Bearer token
-    if bearer_token:
-        try:
-            client = tweepy.Client(bearer_token=bearer_token)
-            client.create_tweet(text=caption)
-            return True, "Posted text-only with Bearer token"
-        except Exception as e:
-            return False, f"Error: {e}"
-    
-    return False, "No valid Twitter credentials"
 
 def get_trending_topics():
-    """Fetch trending topics"""
-    topics = []
+    """Fetch trending topics without pytrends"""
+    # Use static trending topics to avoid pytrends dependency
+    topics = [
+        "Artificial Intelligence",
+        "Digital Marketing", 
+        "Productivity Hacks",
+        "Motivation",
+        "Success Mindset",
+        "Future Technology",
+        "Social Media Growth",
+        "Business Trends",
+        "Climate Action",
+        "Space Exploration",
+        "Mental Health",
+        "Fitness Motivation",
+        "Crypto News",
+        "Web3 Revolution",
+        "Sustainable Living"
+    ]
     
+    # Try to get real trends using free API if available
     try:
-        pytrends = TrendReq(hl='en-US', tz=360)
-        trending = pytrends.trending_searches(pn='united_states')
-        topics.extend(trending[0].tolist()[:5])
+        response = requests.get("https://trends.google.com/trends/api/dailytrends?hl=en-US&tz=-240&geo=US", timeout=5)
+        if response.status_code == 200:
+            # Parse response (skip first 5 characters)
+            data = json.loads(response.text[5:])
+            trends = data.get('default', {}).get('trendingSearches', [])[:5]
+            if trends:
+                trending = [trend.get('title', {}).get('query', '') for trend in trends if trend.get('title', {}).get('query')]
+                if trending:
+                    topics = trending + topics
     except:
         pass
     
-    if not topics:
-        topics = [
-            "Artificial Intelligence",
-            "Digital Marketing", 
-            "Productivity Hacks",
-            "Motivation",
-            "Success Mindset",
-            "Future Technology",
-            "Social Media Growth",
-            "Business Trends"
-        ]
-    
-    return list(set(topics))[:8]
+    return list(set(topics))[:10]
+
+def generate_video_script_html(topic, script):
+    """Generate HTML representation of the video script"""
+    html = f"""
+    <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                border-radius: 15px; 
+                padding: 30px; 
+                color: white;
+                margin: 20px 0;">
+        <h2 style="text-align: center; margin-bottom: 20px;">🎬 {topic.upper()}</h2>
+        <div style="background: rgba(255,255,255,0.1); 
+                    border-radius: 10px; 
+                    padding: 20px;
+                    font-size: 18px;
+                    line-height: 1.6;">
+            {script.replace(chr(10), '<br>')}
+        </div>
+        <p style="text-align: center; margin-top: 20px; font-size: 14px; opacity: 0.8;">
+            ⏱️ Estimated duration: {video_duration} seconds
+        </p>
+    </div>
+    """
+    return html
 
 # ---------- Main UI ----------
 col1, col2, col3 = st.columns([1, 2, 1])
@@ -423,10 +308,11 @@ with col2:
     tab1, tab2 = st.tabs(["🔥 Trending Topics", "✏️ Custom Topic"])
     
     with tab1:
-        if st.button("Refresh Trends", use_container_width=True):
-            with st.spinner("Fetching..."):
+        if st.button("🔄 Refresh Trends", use_container_width=True):
+            with st.spinner("Fetching latest trends..."):
                 topics = get_trending_topics()
                 st.session_state['trending_topics'] = topics
+                st.rerun()
         
         if 'trending_topics' in st.session_state:
             cols = st.columns(2)
@@ -435,14 +321,21 @@ with col2:
                     if st.button(f"📌 {topic}", key=f"trend_{i}", use_container_width=True):
                         st.session_state['selected_topic'] = topic
                         st.rerun()
+        else:
+            # Initial load
+            with st.spinner("Loading trending topics..."):
+                st.session_state['trending_topics'] = get_trending_topics()
+                st.rerun()
     
     with tab2:
-        custom_topic = st.text_input("Enter your topic:")
+        custom_topic = st.text_input("Enter your topic:", placeholder="e.g., Space Exploration, Digital Art, etc.")
         if custom_topic:
-            st.session_state['selected_topic'] = custom_topic
+            if st.button("Use This Topic", use_container_width=True):
+                st.session_state['selected_topic'] = custom_topic
+                st.rerun()
     
     if 'selected_topic' in st.session_state:
-        st.info(f"🎬 Selected: **{st.session_state['selected_topic']}**")
+        st.success(f"🎬 Selected Topic: **{st.session_state['selected_topic']}**")
         selected_topic = st.session_state['selected_topic']
     else:
         selected_topic = None
@@ -452,105 +345,127 @@ with col2:
     if pexels_api_key:
         st.success("✅ Pexels API Ready")
     else:
-        st.warning("⚠️ Enter Pexels API Key")
+        st.info("💡 Enter your Pexels API key to get started (free from pexels.com/api)")
     
-    if st.button("🎬 Generate 60-Second Video", type="primary", use_container_width=True):
+    # Generate button
+    if st.button("🎬 Generate Video Content", type="primary", use_container_width=True, disabled=not selected_topic or not pexels_api_key):
         if not selected_topic:
-            st.error("Please select a topic")
+            st.error("Please select a topic first")
         elif not pexels_api_key:
-            st.error("Please enter Pexels API key")
+            st.error("Please enter your Pexels API key in the sidebar")
         else:
             # Generate script
-            with st.spinner("📝 Generating script..."):
+            with st.spinner("📝 Generating AI script..."):
                 script = generate_ai_script(selected_topic, openai_api_key)
-                with st.expander("View Script"):
-                    st.write(script)
+                
+                # Display script in a nice format
+                st.markdown("### 📝 Generated Script")
+                st.markdown(generate_video_script_html(selected_topic, script), unsafe_allow_html=True)
+                
+                with st.expander("View Plain Text Script"):
+                    st.text(script)
             
             # Search for videos
-            with st.spinner("🎬 Finding videos..."):
+            with st.spinner("🎬 Searching for video clips..."):
                 video_urls = search_pexels_videos(selected_topic, pexels_api_key)
             
             if not video_urls:
-                st.error(f"No videos found for '{selected_topic}'")
-                st.stop()
-            
-            st.success(f"Found {len(video_urls)} clips!")
-            
-            # Create video
-            output_file = f"video_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
-            
-            with st.spinner("🎨 Creating video (2-3 minutes)..."):
-                video_path = create_professional_video(selected_topic, video_urls, script, output_file)
-            
-            if video_path and os.path.exists(video_path):
-                st.success("✅ Video ready!")
+                st.warning(f"No videos found for '{selected_topic}'. Try a different topic or check your API key.")
+                st.info("💡 Tip: Try more general topics like 'nature', 'technology', or 'business'")
+            else:
+                st.success(f"✅ Found {len(video_urls)} video clips!")
+                
+                # Display video preview
+                st.markdown("### 🎥 Video Previews")
+                for i, url in enumerate(video_urls):
+                    with st.expander(f"Video Clip {i+1}"):
+                        st.video(url)
+                
+                # Create text overlay if requested
+                if include_text_overlay and script:
+                    with st.spinner("🎨 Creating text overlay..."):
+                        # Create multiple text overlays from script
+                        sentences = script.split('.')[:5]
+                        for i, sentence in enumerate(sentences):
+                            if sentence.strip():
+                                overlay_img = create_text_overlay_image(sentence.strip())
+                                if overlay_img:
+                                    st.markdown(f"**Text Overlay {i+1}:**")
+                                    st.image(overlay_img, use_container_width=True)
+                
+                # Store results in session state
                 st.session_state.video_ready = True
-                st.session_state.video_path = video_path
+                st.session_state.video_urls = video_urls
                 st.session_state.generated_script = script
                 st.session_state.generated_topic = selected_topic
                 
-                st.markdown("### 🎥 Your Video")
-                with open(video_path, 'rb') as f:
-                    st.video(f.read())
+                st.markdown("---")
+                st.success("✨ Content generation complete!")
                 
-                with open(video_path, 'rb') as f:
-                    st.download_button(
-                        label="📥 Download Video",
-                        data=f,
-                        file_name=f"{selected_topic.replace(' ', '_')}_video.mp4",
-                        mime="video/mp4",
-                        use_container_width=True
-                    )
-            else:
-                st.error("Failed to create video")
+                # Export options
+                st.markdown("### 📋 Export Options")
+                
+                # Export script
+                st.download_button(
+                    label="📝 Download Script",
+                    data=script,
+                    file_name=f"{selected_topic.replace(' ', '_')}_script.txt",
+                    mime="text/plain",
+                    use_container_width=True
+                )
+                
+                # Export video URLs
+                video_urls_text = "\n".join(video_urls)
+                st.download_button(
+                    label="🎬 Download Video URLs",
+                    data=video_urls_text,
+                    file_name=f"{selected_topic.replace(' ', '_')}_video_urls.txt",
+                    mime="text/plain",
+                    use_container_width=True
+                )
+                
+                # HTML preview
+                with st.expander("Preview HTML5 Video Player"):
+                    html_preview = create_html5_video_preview(video_urls, script, selected_topic)
+                    if html_preview:
+                        st.markdown(html_preview, unsafe_allow_html=True)
     
-    # Auto-post section
-    if st.session_state.get('video_ready') and st.session_state.get('video_path'):
+    # Display generated content if available
+    if st.session_state.get('video_ready'):
         st.markdown("---")
-        st.markdown("### 📱 Share to Social Media")
+        st.markdown("### 📦 Generated Content")
         
-        caption = st.text_area(
-            "Tweet Caption",
-            value=f"🔥 Check out this video about {st.session_state.get('generated_topic', 'trending topic')}! 🎬\n\n#AIVideo #Trending",
-            height=100
-        )
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("**📝 Script**")
+            st.info(st.session_state.get('generated_script', 'N/A')[:200] + "...")
         
-        if st.button("🐦 Post to Twitter", type="primary", use_container_width=True):
-            if any([twitter_bearer_token, twitter_api_key]):
-                with st.spinner("Posting..."):
-                    success, message = post_to_twitter(
-                        st.session_state.video_path,
-                        caption,
-                        twitter_bearer_token,
-                        twitter_api_key,
-                        twitter_api_secret,
-                        twitter_access_token,
-                        twitter_access_secret
-                    )
-                    if success:
-                        st.success(f"✅ {message}")
-                    else:
-                        st.error(f"❌ {message}")
-            else:
-                st.warning("Add Twitter credentials in sidebar")
+        with col2:
+            st.markdown("**🎬 Video Clips**")
+            video_urls = st.session_state.get('video_urls', [])
+            st.success(f"{len(video_urls)} clips available")
+            for url in video_urls[:2]:
+                st.markdown(f"- [Clip {video_urls.index(url)+1}]({url})")
         
-        if auto_post:
-            post_to_twitter(
-                st.session_state.video_path,
-                f"🔥 Check out this video about {st.session_state.get('generated_topic', 'trending topic')}! 🎬\n\n#AIVideo #Trending",
-                twitter_bearer_token,
-                twitter_api_key,
-                twitter_api_secret,
-                twitter_access_token,
-                twitter_access_secret
-            )
+        st.markdown("### 🎯 Next Steps")
+        st.info("""
+        **To create your final video:**
+        1. Download the video clips using the URLs above
+        2. Use a video editor like:
+           - CapCut (Free)
+           - DaVinci Resolve (Free)
+           - Adobe Premiere (Paid)
+        3. Combine clips with the generated script as voiceover
+        4. Add text overlays for engagement
+        """)
 
 # ---------- Footer ----------
 st.markdown("---")
 st.markdown(
     """
     <div style='text-align: center; color: gray;'>
-    <p>🎬 AI Video Creator Pro | 60-Second Videos | Auto-Post to Twitter</p>
+    <p>🎬 AI Video Creator Pro | Generate scripts & find clips for viral videos</p>
+    <p style='font-size: 12px;'>⚠️ Note: Final video editing requires external software</p>
     </div>
     """,
     unsafe_allow_html=True
