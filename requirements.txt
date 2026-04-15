@@ -1,6 +1,6 @@
 requests
 moviepy
+pillow
+numpy
 pytrends
 tweepy
-Pillow
-numpy
